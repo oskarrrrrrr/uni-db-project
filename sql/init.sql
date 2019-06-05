@@ -1,3 +1,7 @@
+CREATE USER app WITH ENCRYPTED PASSWORD 'qwerty';
+
+CREATE EXTENSION pgcrypto;
+
 CREATE TYPE action_t AS ENUM ('support', 'protest');
 CREATE TYPE vote_t AS ENUM ('upvote', 'downvote');
 
@@ -9,7 +13,7 @@ CREATE TABLE unique_ids(
 CREATE TABLE member(
     id INTEGER REFERENCES unique_ids(id) PRIMARY KEY,
     is_leader BOOLEAN,
-    password TEXT,
+    password TEXT NOT NULL,
     latest_activity BIGINT,
     upvotes INTEGER,
     downvotes INTEGER

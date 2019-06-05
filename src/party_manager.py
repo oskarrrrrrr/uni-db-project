@@ -11,7 +11,6 @@ try:
     cursor = connection.cursor()
     cursor.execute(open('../sql/init.sql', 'r').read())
     connection.commit()
-    print('success!')
     #record = cursor.fetchone()
 
 except (Exception, psycopg2.Error) as error :
