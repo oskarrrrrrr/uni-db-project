@@ -1,3 +1,3 @@
-psql postgres -c "DROP DATABASE IF EXISTS political_party_db;"
-esql postgres -c "CREATE DATABASE political_party_db;"
+psql postgres -c "DROP DATABASE IF EXISTS student;"
+psql postgres -c "CREATE DATABASE student;"
 psql postgres -c "DROP USER IF EXISTS app;"
