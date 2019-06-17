@@ -214,9 +214,10 @@ $$ LANGUAGE plpgsql security definer;
 -- API FUNCTIONS --
 -------------------
 
-CREATE OR REPLACE FUNCTION leader(timestmp bigint, password text, member_id integer) RETURNS void AS $$
+CREATE OR REPLACE FUNCTION leader(timestmp bigint, password text, member_id integer) RETURNS boolean AS $$
     BEGIN
         PERFORM add_member(member_id, password, timestmp, True);
+        RETURN True;
     END;
 $$ LANGUAGE plpgsql security definer;
 

@@ -35,6 +35,7 @@ def initialize_db():
         if(connection):
             cursor.close()
             connection.close()
+            print(json.dumps({"status": "OK"}))
 
 
 class ApiCall:
@@ -74,63 +75,108 @@ class ApiCaller:
             exit()
 
 
-    def _leader(self):
-        self._cursor.execute('select leader(' + \
-                str(self._api_call.leader['timestamp']) + '::bigint, ' + \
-                '\'' + str(self._api_call.leader['password'])  + '\'::text, ' + \
-                str(self._api_call.leader['member'])    + '::integer);')
-        self._connection.commit() 
-        result = self._cursor.fetchone()
-        print('result: ' + str(result))
+    @staticmethod 
+    def _print_status_ok():
+        print(json.dumps({"status": "OK"}))
 
 
-    def _support(self):
-        self._cursor.execute('select support(' + \
-                str(self._api_call.support['timestamp']) + ', ' + \
-                str(self._api_call.support['member']) + ',' + \
-                '\'' + str(self._api_call.support['password'])  + '\', ' + \
-                str(self._api_call.support['action']) + ',' + \
-                str(self._api_call.support['project']) + '' + \
-                ');')
-                #str(self._api_call.support['authority'])    + ');')
-        self._connection.commit() 
-        result = self._cursor.fetchone()
-        print('result: ' + str(result))
+    @staticmethod
+    def _print_status_ok_data(data):
+        print(json.dumps({"status": "OK", "data": data}))
+    
+
+    @staticmethod
+    def _print_status_error():
+        print(json.dumps({"status": "Error"}))
 
     
+    @staticmethod
+    def conv_arg(arg, arg_t):
+        if arg_t == 'text':
+            return '\'' + arg + '\'::' + arg_t
+        return arg + '::' + arg_t
+
+    
+    def _create_psql_fun_str(self, f_name, args_dict, arg_types):
+        args = ', '.join([self.conv_arg(str(arg), arg_type) for arg, arg_type in zip(list(args_dict.values()), arg_types)])
+        return 'SELECT ' + f_name + '(' + args + ');'
+
+
+    def _call_psql_fun(self, f_name, arg_dict, arg_types):
+        self._cursor.execute(self._create_psql_fun_str(f_name, arg_dict, arg_types))
+        self._connection.commit()
+    
+
+    def _handle_bool_psql_fun(self, f_name, arg_dict, arg_types):
+        self._call_psql_fun(f_name, arg_dict, arg_types)
+        status = self._cursor.fetchone()
+        if bool(status): 
+            self._print_status_ok()
+        else:
+            self._print_status_error()
+
+
+    def _leader(self):
+        self._handle_bool_psql_fun(
+                'leader',
+                self._api_call.leader,
+                ['bigint', 'text', 'integer']
+                )
+            
+
+    def _support(self):
+        self._handle_bool_psql_fun(
+                'support',
+                self._api_call.support,
+                ['bigint', 'integer', 'text', 'integer', 'integer', 'integer']
+                )
+    
     def _protest(self):
-        pass
+        self._handle_bool_psql_fun(
+                'protest',
+                self._api_call.protest,
+                ['bigint', 'integer', 'text', 'integer', 'integer', 'integer']
+                )
 
 
     def _upvote(self):
-        pass
-
+        self._handle_bool_psql_fun(
+                'upvote',
+                self._api_call.upvote,
+                ['bigint', 'integer', 'text', 'integer']
+                )
     
     def _downvote(self):
-        pass
+        self._handle_bool_psql_fun(
+                'downvote',
+                self._api_call.downvote,
+                ['bigint', 'integer', 'text', 'integer']
+                )
 
 
     def _actions(self):
-        pass
+        print('call actions')
 
 
     def _projects(self):
-        pass
+        print('call projects')
 
 
     def _votes(self):
-        pass
+        print('call votes')
 
 
     def _trolls(self):
-        pass
+        print('call trolls')
 
 
 if len(sys.argv) > 1 and sys.argv[1] == '--init':
-    print('Initializing')
     initialize_db()
+    
+
 
 api_caller = ApiCaller()
 for line in sys.stdin:
+    #print(line)
     api_caller.call(ApiCall(line))
 api_caller.exit()
