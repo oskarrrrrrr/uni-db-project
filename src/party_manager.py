@@ -76,16 +76,26 @@ class ApiCaller:
 
     def _leader(self):
         self._cursor.execute('select leader(' + \
-                str(self._api_call.leader['timestamp']) + ', ' + \
-                '\'' + str(self._api_call.leader['password'])  + '\', ' + \
-                str(self._api_call.leader['member'])    + ');')
+                str(self._api_call.leader['timestamp']) + '::bigint, ' + \
+                '\'' + str(self._api_call.leader['password'])  + '\'::text, ' + \
+                str(self._api_call.leader['member'])    + '::integer);')
         self._connection.commit() 
         result = self._cursor.fetchone()
         print('result: ' + str(result))
 
 
     def _support(self):
-        pass
+        self._cursor.execute('select support(' + \
+                str(self._api_call.support['timestamp']) + ', ' + \
+                str(self._api_call.support['member']) + ',' + \
+                '\'' + str(self._api_call.support['password'])  + '\', ' + \
+                str(self._api_call.support['action']) + ',' + \
+                str(self._api_call.support['project']) + '' + \
+                ');')
+                #str(self._api_call.support['authority'])    + ');')
+        self._connection.commit() 
+        result = self._cursor.fetchone()
+        print('result: ' + str(result))
 
     
     def _protest(self):
@@ -116,7 +126,8 @@ class ApiCaller:
         pass
 
 
-if sys.argv[1] == '--init':
+if len(sys.argv) > 1 and sys.argv[1] == '--init':
+    print('Initializing')
     initialize_db()
 
 api_caller = ApiCaller()
