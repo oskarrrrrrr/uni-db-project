@@ -16,26 +16,25 @@ json_2_api_call = {
         'trolls': '_trolls',
         }
 
+api_arg_name_to_psql_arg_name = {
+        'timestamp': 'timestmp',
+        'password': 'password',
+        'member': 'member_id',
+        'action': 'action_id',
+        'project': 'project_id',
+        'authority': 'authority_id',
+        'type': 'action_type',
+        }
 
-
-def initialize_db():
-    try:
-        connection = psycopg2.connect(user     = "init",
-                                      password = "qwerty",
-                                      database = "student")
-
-        cursor = connection.cursor()
-        cursor.execute(open('../sql/init.sql', 'r').read())
-        connection.commit()
-
-    except (Exception, psycopg2.Error) as error :
-        print ("Error while connecting to PostgreSQL", error)
-
-    finally:
-        if(connection):
-            cursor.close()
-            connection.close()
-            print(json.dumps({"status": "OK"}))
+api_arg_name_to_psql_type = {
+        'timestamp': 'bigint',
+        'password': 'text',
+        'member': 'integer',
+        'action': 'integer',
+        'project': 'integer',
+        'authority': 'integer',
+        'type': 'action_t',
+        }
 
 
 class ApiCall:
@@ -44,9 +43,8 @@ class ApiCall:
         
 
 class ApiCaller:
-    def __init__(self):
-        pass
-
+    def __init__(self, init=False):
+        self.init = init
 
     def call(self, api_call):
         self._api_call = api_call
@@ -70,6 +68,11 @@ class ApiCaller:
                     )
             self._cursor = self._connection.cursor()
 
+            if self.init:
+                self._cursor.execute(open('../sql/init.sql', 'r').read())
+                self._connection.commit()
+                print(json.dumps({"status": "OK"}))
+
         except (Exception, psycopg2.Error) as error:
             print('Error while connection to PostgreSQL', error)
             exit()
@@ -91,24 +94,35 @@ class ApiCaller:
 
     
     @staticmethod
-    def conv_arg(arg, arg_t):
+    def conv_arg(arg, arg_name):
+        arg_t = api_arg_name_to_psql_type[arg_name]
         if arg_t == 'text':
-            return '\'' + arg + '\'::' + arg_t
-        return arg + '::' + arg_t
+            res_str = '\'' + arg + '\''
+        else:
+            res_str =  arg 
+        res_str = api_arg_name_to_psql_arg_name[arg_name] + ' := ' + res_str + '::' + arg_t
+        return res_str
 
     
-    def _create_psql_fun_str(self, f_name, args_dict, arg_types):
-        args = ', '.join([self.conv_arg(str(arg), arg_type) for arg, arg_type in zip(list(args_dict.values()), arg_types)])
+    def _create_psql_fun_str(self, f_name, args_dict):
+        args = ', '.join(
+                [
+                    self.conv_arg(str(args_dict[arg_name]), arg_name)
+                    for arg_name in args_dict.keys()
+                ]
+            )
         return 'SELECT ' + f_name + '(' + args + ');'
 
 
-    def _call_psql_fun(self, f_name, arg_dict, arg_types):
-        self._cursor.execute(self._create_psql_fun_str(f_name, arg_dict, arg_types))
+    def _call_psql_fun(self, f_name, arg_dict):
+        call_str = self._create_psql_fun_str(f_name, arg_dict)
+        #print(call_str)
+        self._cursor.execute(call_str)
         self._connection.commit()
     
 
-    def _handle_bool_psql_fun(self, f_name, arg_dict, arg_types):
-        self._call_psql_fun(f_name, arg_dict, arg_types)
+    def _handle_bool_psql_fun(self, f_name, arg_dict):
+        self._call_psql_fun(f_name, arg_dict)
         status = self._cursor.fetchone()
         if bool(status): 
             self._print_status_ok()
@@ -117,41 +131,23 @@ class ApiCaller:
 
 
     def _leader(self):
-        self._handle_bool_psql_fun(
-                'leader',
-                self._api_call.leader,
-                ['bigint', 'text', 'integer']
-                )
+        self._handle_bool_psql_fun('leader', self._api_call.leader)
             
 
     def _support(self):
-        self._handle_bool_psql_fun(
-                'support',
-                self._api_call.support,
-                ['bigint', 'integer', 'text', 'integer', 'integer', 'integer']
-                )
+        self._handle_bool_psql_fun( 'support', self._api_call.support)
     
+
     def _protest(self):
-        self._handle_bool_psql_fun(
-                'protest',
-                self._api_call.protest,
-                ['bigint', 'integer', 'text', 'integer', 'integer', 'integer']
-                )
+        self._handle_bool_psql_fun('protest', self._api_call.protest)
 
 
     def _upvote(self):
-        self._handle_bool_psql_fun(
-                'upvote',
-                self._api_call.upvote,
-                ['bigint', 'integer', 'text', 'integer']
-                )
+        self._handle_bool_psql_fun('upvote', self._api_call.upvote)
     
+
     def _downvote(self):
-        self._handle_bool_psql_fun(
-                'downvote',
-                self._api_call.downvote,
-                ['bigint', 'integer', 'text', 'integer']
-                )
+        self._handle_bool_psql_fun('downvote', self._api_call.downvote)
 
 
     def _actions(self):
@@ -170,13 +166,11 @@ class ApiCaller:
         print('call trolls')
 
 
-if len(sys.argv) > 1 and sys.argv[1] == '--init':
-    initialize_db()
-    
+init = len(sys.argv) > 1 and sys.argv[1] == '--init'
+api_caller = ApiCaller(init)
 
-
-api_caller = ApiCaller()
 for line in sys.stdin:
     #print(line)
     api_caller.call(ApiCall(line))
+
 api_caller.exit()
