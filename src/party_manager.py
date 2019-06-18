@@ -101,7 +101,7 @@ class ApiCaller:
 
     @staticmethod
     def _print_status_error():
-        print(json.dumps({"status": "Error"}))
+        print(json.dumps({"status": "ERROR"}))
 
     
     @staticmethod
