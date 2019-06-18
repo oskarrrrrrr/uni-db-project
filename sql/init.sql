@@ -31,7 +31,7 @@ CREATE TYPE trolls_ret AS(
     member_id integer,
     upvotes integer,
     downvotes integer,
-    active boolean
+    active text
 );
 
 ------------
@@ -232,7 +232,7 @@ CREATE OR REPLACE FUNCTION support(
     BEGIN
         RETURN add_action('support', timestmp, member_id, password, action_id, project_id, authority_id);
     END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql security definer;
 
 CREATE OR REPLACE FUNCTION protest(
     timestmp bigint,
@@ -358,7 +358,7 @@ CREATE OR REPLACE FUNCTION trolls(
     ) RETURNS SETOF trolls_ret AS $$
     BEGIN
         RETURN QUERY
-            SELECT member.id, member.upvotes, member.downvotes, is_member_frozen(member.id, timestmp)
+            SELECT member.id, member.upvotes, member.downvotes, INITCAP(is_member_frozen(member.id, timestmp)::text)
             FROM member
             ORDER BY member.downvotes - member.upvotes;
     END;

@@ -1,9 +1,20 @@
 import sys
 import psycopg2
 import json
+import ast
 
 
-json_2_api_call = {
+def parse_tuple(string):
+    try:
+        s = ast.literal_eval(str(string))
+        if type(s) == tuple:
+            return s
+        return
+    except:
+        return
+
+
+api_fun_name_to_psql_fun_name = {
         'open': '_open',
         'leader': '_leader',
         'support': '_support',
@@ -49,8 +60,8 @@ class ApiCaller:
     def call(self, api_call):
         self._api_call = api_call
         call_type = list(self._api_call.__dict__)[0]
-        if call_type in json_2_api_call:
-            getattr(self, json_2_api_call[call_type])()
+        if call_type in api_fun_name_to_psql_fun_name:
+            getattr(self, api_fun_name_to_psql_fun_name[call_type])()
 
 
     def exit(self):
@@ -96,10 +107,11 @@ class ApiCaller:
     @staticmethod
     def conv_arg(arg, arg_name):
         arg_t = api_arg_name_to_psql_type[arg_name]
+        res_str = arg
+
         if arg_t == 'text':
-            res_str = '\'' + arg + '\''
-        else:
-            res_str =  arg 
+            res_str = '\'' + res_str  + '\''
+
         res_str = api_arg_name_to_psql_arg_name[arg_name] + ' := ' + res_str + '::' + arg_t
         return res_str
 
@@ -116,7 +128,6 @@ class ApiCaller:
 
     def _call_psql_fun(self, f_name, arg_dict):
         call_str = self._create_psql_fun_str(f_name, arg_dict)
-        #print(call_str)
         self._cursor.execute(call_str)
         self._connection.commit()
     
@@ -129,13 +140,19 @@ class ApiCaller:
         else:
             self._print_status_error()
 
+    
+    def _handle_set_psql_fun(self, f_name, arg_dict):
+        self._call_psql_fun(f_name, arg_dict)
+        result = [list(parse_tuple(list(x)[0])) for x in self._cursor]
+        self._print_status_ok_data(result)
+
 
     def _leader(self):
         self._handle_bool_psql_fun('leader', self._api_call.leader)
             
 
     def _support(self):
-        self._handle_bool_psql_fun( 'support', self._api_call.support)
+        self._handle_bool_psql_fun('support', self._api_call.support)
     
 
     def _protest(self):
@@ -151,26 +168,25 @@ class ApiCaller:
 
 
     def _actions(self):
-        print('call actions')
+        self._handle_set_psql_fun('actions', self._api_call.actions)
 
 
     def _projects(self):
-        print('call projects')
+        self._handle_set_psql_fun('projects', self._api_call.projects)
 
 
     def _votes(self):
-        print('call votes')
+        self._handle_set_psql_fun('votes', self._api_call.votes)
 
 
     def _trolls(self):
-        print('call trolls')
+        self._handle_set_psql_fun('trolls', self._api_call.trolls)
 
 
 init = len(sys.argv) > 1 and sys.argv[1] == '--init'
 api_caller = ApiCaller(init)
 
 for line in sys.stdin:
-    #print(line)
     api_caller.call(ApiCall(line))
 
 api_caller.exit()
