@@ -58,6 +58,7 @@ class ApiCaller:
         self.init = init
 
     def call(self, api_call):
+        self.error = False
         self._api_call = api_call
         call_type = list(self._api_call.__dict__)[0]
         if call_type in api_fun_name_to_psql_fun_name:
@@ -77,10 +78,11 @@ class ApiCaller:
                     password = self._api_call.open['password'],
                     database = self._api_call.open['database']
                     )
+            self._connection.autocommit = True
             self._cursor = self._connection.cursor()
 
             if self.init:
-                self._cursor.execute(open('../sql/init.sql', 'r').read())
+                self._cursor.execute(open('./init.sql', 'r').read())
                 self._connection.commit()
                 print(json.dumps({"status": "OK"}))
 
@@ -128,9 +130,12 @@ class ApiCaller:
 
     def _call_psql_fun(self, f_name, arg_dict):
         call_str = self._create_psql_fun_str(f_name, arg_dict)
-        self._cursor.execute(call_str)
-        self._connection.commit()
-    
+        try:
+            self._cursor.execute(call_str)
+            self._connection.commit()
+        except psycopg2.DatabaseError as e:
+            self.error = True
+            #print(e)
 
     def _handle_bool_psql_fun(self, f_name, arg_dict):
         self._call_psql_fun(f_name, arg_dict)
@@ -138,13 +143,16 @@ class ApiCaller:
         if bool(status): 
             self._print_status_ok()
         else:
-            self._print_status_error()
+            member.self._print_status_error()
 
     
     def _handle_set_psql_fun(self, f_name, arg_dict):
         self._call_psql_fun(f_name, arg_dict)
-        result = [list(parse_tuple(list(x)[0])) for x in self._cursor]
-        self._print_status_ok_data(result)
+        if not self.error:
+            result = [list(parse_tuple(list(x)[0])) for x in self._cursor]
+            self._print_status_ok_data(result)
+        else:
+            self._print_status_error()
 
 
     def _leader(self):

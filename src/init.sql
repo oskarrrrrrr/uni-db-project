@@ -97,7 +97,8 @@ CREATE OR REPLACE FUNCTION add_member(
 ) RETURNS void AS $$
     BEGIN
         INSERT INTO unique_ids VALUES(member_id);
-        INSERT INTO member (id, is_leader, password, latest_activity) VALUES(member_id, is_leader, password, timestmp);
+        INSERT INTO member (id, is_leader, password, latest_activity)
+            VALUES(member_id, is_leader, crypt(password, gen_salt('bf', 8)), timestmp);
     END;
 $$ LANGUAGE plpgsql;
 
@@ -125,31 +126,46 @@ CREATE OR REPLACE FUNCTION update_member_latest_activity(member_id integer, time
 $$ LANGUAGE plpgsql;
 
 
-CREATE OR REPLACE FUNCTION handle_member(member_id integer, password text, timestmp bigint) RETURNS boolean AS $$
-    DECLARE
-        is_new boolean;
-        password_ok boolean;
+CREATE OR REPLACE FUNCTION check_password(member_id integer, password text) RETURNS void AS $$
     BEGIN
-
-        IF is_member_frozen(member_id, timestmp) THEN
-            RETURN False;
+        IF (
+            SELECT member.id
+            FROM member
+            WHERE member.id = member_id AND member.password = crypt($2, member.password)
+        ) IS NULL THEN
+            RAISE EXCEPTION 'Incorrect credentials!';
         END IF;
-
-        SELECT add_member_if_new(member_id, password, timestmp) INTO is_new;
-        IF NOT is_new THEN
-            SELECT check_password(member_id, password) INTO password_ok;
-            IF NOT password_ok THEN
-                RETURN False; 
-            END IF;
-        END IF;
-        RETURN True;
     END;
 $$ LANGUAGE plpgsql;
 
-
-CREATE OR REPLACE FUNCTION check_password(member_id integer, password text) RETURNS boolean AS $$
+CREATE OR REPLACE FUNCTION check_frozen(member_id integer, timestmp bigint) RETURNS void AS $$
     BEGIN
-        RETURN (SELECT member.password FROM member WHERE member.id = member_id) = password;
+        IF is_member_frozen(member_id, timestmp) THEN
+            RAISE EXCEPTION 'Member is frozen!';
+        END IF;
+    END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION check_leader(member_id integer) RETURNS void AS $$
+    BEGIN
+        IF (SELECT member.id FROM member WHERE member.id = member_id AND member.is_leader) IS NULL THEN
+            RAISE EXCEPTION 'Member is not a leader!';
+        END IF;
+    END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION handle_member(member_id integer, password text, timestmp bigint) RETURNS boolean AS $$
+    DECLARE
+        is_new boolean;
+    BEGIN
+
+        PERFORM check_frozen(member_id, timestmp); 
+
+        SELECT add_member_if_new(member_id, password, timestmp) INTO is_new;
+        IF NOT is_new THEN
+            PERFORM check_password(member_id, password);
+        END IF;
+        RETURN True;
     END;
 $$ LANGUAGE plpgsql;
 
@@ -205,6 +221,11 @@ CREATE OR REPLACE FUNCTION add_vote(
     ) RETURNS boolean AS $$
     BEGIN
         INSERT INTO vote VALUES(action_id, member_id, vote_type);
+        IF vote_type = 'upvote' THEN
+            UPDATE member SET upvotes = upvotes + 1 WHERE id = member_id;
+        ELSE
+            UPDATE member SET downvotes = downvotes + 1 WHERE id = member_id;
+        END IF;
         RETURN True; 
     END;
 $$ LANGUAGE plpgsql security definer;
@@ -229,7 +250,13 @@ CREATE OR REPLACE FUNCTION support(
     project_id integer,
     authority_id integer DEFAULT NULL
     ) RETURNS boolean AS $$
+    DECLARE
+        member_ok boolean;
     BEGIN
+        SELECT handle_member(member_id, password, timestmp) INTO member_ok;
+        IF NOT member_ok THEN 
+            RETURN False;
+        END IF;
         RETURN add_action('support', timestmp, member_id, password, action_id, project_id, authority_id);
     END;
 $$ LANGUAGE plpgsql security definer;
@@ -242,7 +269,13 @@ CREATE OR REPLACE FUNCTION protest(
     project_id integer,
     authority_id integer DEFAULT NULL
     ) RETURNS boolean AS $$
+    DECLARE
+        member_ok boolean;
     BEGIN
+        SELECT handle_member(member_id, password, timestmp) INTO member_ok;
+        IF NOT member_ok THEN 
+            RETURN False;
+        END IF;
         RETURN add_action('protest', timestmp, member_id, password, action_id, project_id, authority_id);
     END;
 $$ LANGUAGE plpgsql security definer;
@@ -298,25 +331,19 @@ CREATE OR REPLACE FUNCTION actions(
     action_type action_t DEFAULT NULL,
     project_id integer DEFAULT NULL,
     authority_id integer DEFAULT NULL
-    ) RETURNS action_ret AS $$
-    DECLARE
-        ret action_ret;
+    ) RETURNS SETOF action_ret AS $$
     BEGIN
 
-        IF is_member_frozen(member_id, timestmp) THEN
-            --OR (SELECT * FROM member WHERE member.id = member_id AND member.is_leader) IS NULL THEN
-            RETURN False;
-        END IF;
+        PERFORM check_password(member_id, password);
+        PERFORM check_frozen(member_id, timestmp);
+        PERFORM check_leader(member_id);
         
-        SELECT action.id, action.action_type, action.project_id, project.authority_id, SUM(member.upvotes)::int, SUM(member.downvotes)::int
-        FROM action JOIN member ON action.member_id = member.id
-            JOIN project ON action.project_id = project.id
-        GROUP BY action.id, project.authority_id
-        ORDER BY action.id ASC INTO ret;
-
-        -- TODO filter using optional parameters
-        
-        RETURN ret;
+        RETURN QUERY
+            SELECT action.id, action.action_type, action.project_id, project.authority_id, SUM(member.upvotes)::int, SUM(member.downvotes)::int
+            FROM action JOIN member ON action.member_id = member.id
+                JOIN project ON action.project_id = project.id
+            GROUP BY action.id, project.authority_id
+            ORDER BY action.id ASC;
 
     END;
 $$ LANGUAGE plpgsql security definer;
@@ -326,12 +353,15 @@ CREATE OR REPLACE FUNCTION projects(
     member_id integer,
     password text,
     authority_id integer DEFAULT NULL
-    ) RETURNS project_ret AS $$
-    DECLARE
-        ret project_ret;
+    ) RETURNS SETOF project_ret AS $$
     BEGIN
-        SELECT * FROM project INTO ret;
-        RETURN ret; 
+        PERFORM check_password(member_id, password);
+        PERFORM check_frozen(member_id, timestmp);
+        PERFORM check_leader(member_id);
+        RETURN QUERY
+            SELECT *
+            FROM project
+            WHERE $4 IS NULL OR $4 = project.authority_id;
     END;
 $$ LANGUAGE plpgsql security definer;
 
@@ -343,11 +373,17 @@ CREATE OR REPLACE FUNCTION votes(
     project_id integer DEFAULT NULL
     ) RETURNS SETOF votes_ret AS $$
     BEGIN
+        PERFORM check_password(member_id, password);
+        PERFORM check_frozen(member_id, timestmp);
+        PERFORM check_leader(member_id);
+
         RETURN QUERY
             SELECT member.id,
                 (COUNT(vote.action_id) FILTER (WHERE vote.vote_type = 'upvote'))::int AS upvotes,
                 (COUNT(vote.action_id) FILTER (WHERE vote.vote_type = 'downvote'))::int AS downvotes
             FROM member LEFT JOIN vote ON member.id = vote.member_id
+                LEFT JOIN action ON vote.action_id = action.id
+            WHERE ($4 IS NOT NULL AND ($4 = vote.action_id OR $4 = action.project_id)) OR $4 IS NULL
             GROUP BY member.id
             ORDER BY member.id ASC;
     END;
@@ -360,7 +396,7 @@ CREATE OR REPLACE FUNCTION trolls(
         RETURN QUERY
             SELECT member.id, member.upvotes, member.downvotes, INITCAP(is_member_frozen(member.id, timestmp)::text)
             FROM member
-            ORDER BY member.downvotes - member.upvotes;
+            ORDER BY member.downvotes - member.upvotes DESC, member.id ASC;
     END;
 $$ LANGUAGE plpgsql security definer;
 
