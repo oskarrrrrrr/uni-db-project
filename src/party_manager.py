@@ -144,7 +144,6 @@ class ApiCaller:
             self._print_status_ok()
         else:
             member.self._print_status_error()
-
     
     def _handle_set_psql_fun(self, f_name, arg_dict):
         self._call_psql_fun(f_name, arg_dict)

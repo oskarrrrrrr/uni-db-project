@@ -1,8 +1,0 @@
-psql postgres -c "DROP SCHEMA public CASCADE;"
-psql postgres -c "DROP DATABASE IF EXISTS student;"
-psql postgres -c "DROP FUNCTION IF EXISTS support;"
-psql postgres -c "DROP FUNCTION IF EXISTS protest;"
-psql postgres -c "DROP FUNCTION IF EXISTS leader;"
-psql postgres -c "DROP USER IF EXISTS app;"
-psql postgres -c "CREATE DATABASE student;"
-psql postgres -c "CREATE SCHEMA public;"

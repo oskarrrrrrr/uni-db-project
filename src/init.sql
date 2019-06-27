@@ -335,16 +335,8 @@ CREATE OR REPLACE FUNCTION actions(
     BEGIN
 
         PERFORM check_password(member_id, password);
-        PERFORM check_frozen(member_id, timestmp);
         PERFORM check_leader(member_id);
         
-        RETURN QUERY
-            SELECT action.id, action.action_type, action.project_id, project.authority_id, SUM(member.upvotes)::int, SUM(member.downvotes)::int
-            FROM action JOIN member ON action.member_id = member.id
-                JOIN project ON action.project_id = project.id
-            GROUP BY action.id, project.authority_id
-            ORDER BY action.id ASC;
-
     END;
 $$ LANGUAGE plpgsql security definer;
 
@@ -356,7 +348,6 @@ CREATE OR REPLACE FUNCTION projects(
     ) RETURNS SETOF project_ret AS $$
     BEGIN
         PERFORM check_password(member_id, password);
-        PERFORM check_frozen(member_id, timestmp);
         PERFORM check_leader(member_id);
         RETURN QUERY
             SELECT *
@@ -374,7 +365,6 @@ CREATE OR REPLACE FUNCTION votes(
     ) RETURNS SETOF votes_ret AS $$
     BEGIN
         PERFORM check_password(member_id, password);
-        PERFORM check_frozen(member_id, timestmp);
         PERFORM check_leader(member_id);
 
         RETURN QUERY
